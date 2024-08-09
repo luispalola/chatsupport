@@ -59,7 +59,8 @@ export async function POST(req) {
                 for await (const chunk of completion) {
                     const content = chunk.choices[0]?.delta?.content
                     if (content) {
-                        const text = encoder.encode(content)
+                        const cleanedContent = content.replace(/\*\*/g, '')
+                        const text = encoder.encode(cleanedContent);
                         controller.enqueue(text)
                     }
                 }
