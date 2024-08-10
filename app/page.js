@@ -1,6 +1,7 @@
 'use client'
-import { Stack, Box, TextField, Button, Typography } from "@mui/material";
+import { Stack, Box, TextField, Button, CircularProgress, Typography } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
+import Head from 'next/head';
 import SendIcon from '@mui/icons-material/Send';
 import { db } from "@/firebase";
 import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
@@ -17,7 +18,7 @@ export default function Home() {
 
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [user, setUser] = useState(null); // Add user state
+  const [user, setUser] = useState(null); // User state for authentication
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -128,6 +129,9 @@ export default function Home() {
 
   return (
     <>
+      <Head>
+        <title>Gainful Customer Support</title>
+      </Head>
       <Box
         width="100vw"
         height="100vh"
@@ -143,12 +147,17 @@ export default function Home() {
         >
           <Button
             variant="contained"
-            color={user ? 'success' : 'error'}
+            sx = {{
+              bgcolor: user ? 'red' : 'green',
+              '&:hover': {
+                bgcolor: user ? 'darkred' : 'darkgreen',
+              },
+              color: 'white'
+            }}
             onClick={() => {
               if (user) {
-                auth.signOut(); // Log the user out
+                auth.signOut();
               } else {
-                // Redirect to login page or show login modal
                 window.location.href = '/login';
               }
             }}
@@ -157,21 +166,24 @@ export default function Home() {
           </Button>
         </Box>
 
-        {/* header */}
+        {/* Header */}
         <Box
           maxWidth
-          height={100}
+          height={90}
           bgcolor={"#204D46"}
           display="flex"
           alignItems="center"
           justifyContent="center"
         >
-          <Typography
-            variant="h4"
-            color="white"
-          >
-            GAINFUL CUSTOMER SUPPORT
-          </Typography>
+          <Box
+            component="img"
+            sx={{
+              height: 50,
+              width: 50,
+            }}
+            alt="Logo"
+            src="https://www.gainful.com/_next/image/?url=https%3A%2F%2Fdlye1hka1kz5z.cloudfront.net%2F_next%2Fstatic%2Fmedia%2Flogo-light.082ab69b.webp&w=1200&q=75"
+          />
         </Box>
 
         <Box
@@ -244,7 +256,6 @@ export default function Home() {
                 +
               </Typography>
             </Box>
-
           </Box>
 
           {/* Chat */}
@@ -311,9 +322,9 @@ export default function Home() {
                   bgcolor: "#edff79", borderColor: "#edff79", color: "black",
                   '&:hover': { bgcolor: "#76915e", borderColor: "#76915e" }
                 }}
-                endIcon={<SendIcon />}
+                endIcon={isLoading ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
               >
-                Send
+                {isLoading ? "Sending..." : "Send"}
               </Button>
             </Stack>
           </Stack>
