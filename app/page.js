@@ -3,6 +3,7 @@ import { Stack, Box, TextField, Button, CircularProgress, Typography } from "@mu
 import { useEffect, useRef, useState } from "react";
 import Head from 'next/head';
 import SendIcon from '@mui/icons-material/Send';
+import HistoryIcon from '@mui/icons-material/History';
 import { db } from "@/firebase";
 import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { auth } from './config/firebaseConfig';
@@ -19,6 +20,7 @@ export default function Home() {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState(null); 
+  const [isChatHistoryVisible, setIsChatHistoryVisible] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -131,6 +133,7 @@ export default function Home() {
     <>
       <Head>
         <title>Gainful Customer Support</title>
+        <meta name="description" content="Gainful customer support page." />
       </Head>
       <Box
         width="100vw"
@@ -138,70 +141,99 @@ export default function Home() {
         bgcolor="#F8F4F0"
         display="flex"
         flexDirection="column"
+        position="relative"
       >
-        {/* Login Status Button */}
-        <Box
-          position="absolute"
-          top={10}
-          left={10}
-        >
-          <Button
-            variant="contained"
-            sx = {{
-              bgcolor: user ? 'red' : 'green',
-              '&:hover': {
-                bgcolor: user ? 'darkred' : 'darkgreen',
-              },
-              color: 'white'
-            }}
-            onClick={() => {
-              if (user) {
-                auth.signOut();
-              } else {
-                window.location.href = '/login';
-              }
-            }}
-          >
-            {user ? 'Logout' : 'Login'}
-          </Button>
-        </Box>
-
         {/* Header */}
         <Box
-          maxWidth
+          width="100%"
           height={90}
           bgcolor={"#204D46"}
           display="flex"
           alignItems="center"
-          justifyContent="center"
+          justifyContent="space-between"
+          padding="0 2%"
         >
+          {/* Left Section for Chat History Icon */}
           <Box
-            component="img"
-            sx={{
-              height: 50,
-              width: 50,
-            }}
-            alt="Logo"
-            src="https://www.gainful.com/_next/image/?url=https%3A%2F%2Fdlye1hka1kz5z.cloudfront.net%2F_next%2Fstatic%2Fmedia%2Flogo-light.082ab69b.webp&w=1200&q=75"
-          />
+            display="flex"
+            justifyContent="flex-start"
+            alignItems="center"
+            flex="1"
+          >
+            <Button
+              onClick={() => setIsChatHistoryVisible(!isChatHistoryVisible)}
+              sx={{
+                color: "white",
+                minWidth: 'auto',
+              }}
+            >
+              <HistoryIcon />
+            </Button>
+          </Box>
+
+          {/* Center Section for Logo */}
+          <Box
+            display="flex"
+            justifyContent="center"
+            alignItems="center"
+            flex="1"
+          >
+            <Box
+              component="img"
+              sx={{
+                height: 50,
+                width: 50,
+              }}
+              alt="Logo"
+              src="https://www.gainful.com/_next/image/?url=https%3A%2F%2Fdlye1hka1kz5z.cloudfront.net%2F_next%2Fstatic%2Fmedia%2Flogo-light.082ab69b.webp&w=1200&q=75"
+            />
+          </Box>
+
+          {/* Right Section for Login Button */}
+          <Box
+            display="flex"
+            justifyContent="flex-end"
+            alignItems="center"
+            flex="1"
+          >
+            <Button
+              variant="contained"
+              sx={{
+                bgcolor: user ? 'red' : '#edff79',
+                '&:hover': {
+                  bgcolor: user ? 'darkred' : '#a6b355',
+                },
+                color: '#204D46',
+                fontWeight: 'bold',
+              }}
+              onClick={() => {
+                if (user) {
+                  auth.signOut();
+                } else {
+                  window.location.href = '/login';
+                }
+              }}
+            >
+              {user ? 'Logout' : 'Login'}
+            </Button>
+          </Box>
         </Box>
 
-        <Box
-          sx={{ flex: 1 }}
-          m={5}
-          display="flex"
-          flexDirection={"row"}
-          gap={10}
-        >
-          {/* Chat History */}
+        {/* Chat History Layered on Top */}
+        {isChatHistoryVisible && (
           <Box
-            width={320}
-            height="100%"
-            bgcolor={"white"}
-            borderRadius={3}
+            position="absolute"
+            top={90} // Positioning it right below the header
+            width="100vw"
+            height="calc(100vh - 90px)"
+            bgcolor="rgba(255, 255, 255, 0.9)"
+            zIndex={10}
             display="flex"
-            alignItems={"center"}
             flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            borderRadius={3}
+            padding={2}
           >
             <Typography
               my={2}
@@ -212,7 +244,6 @@ export default function Home() {
 
             <Box
               width={270}
-              length={100}
               mb={4}
             >
               <TextField
@@ -223,6 +254,7 @@ export default function Home() {
                   "& fieldset": { border: 'none' },
                   '& .MuiInputBase-input': {
                     backgroundColor: '#F5F5F5',
+                    borderRadius: '20px',
                   },
                   '&:hover fieldset': {
                     borderColor: 'green',
@@ -257,8 +289,16 @@ export default function Home() {
               </Typography>
             </Box>
           </Box>
+        )}
 
-          {/* Chat */}
+        {/* Chat */}
+        <Box
+          sx={{ flex: 1 }}
+          m={5}
+          display="flex"
+          flexDirection={{ xs: 'column', md: 'row' }}
+          gap={10}
+        >
           <Stack
             sx={{ flex: 1 }}
             height="100%"
@@ -292,7 +332,7 @@ export default function Home() {
               }
               <div ref={messagesEndRef} />
             </Stack>
-            <Stack direction="row" spacing={2}>
+            <Stack direction="row" spacing={1}>
               <TextField
                 placeholder="Ask a question"
                 bgcolor="white"
@@ -302,9 +342,10 @@ export default function Home() {
                 onKeyPress={handleKeyPress}
                 disabled={isLoading}
                 sx={{
-                  "& fieldset": { border: 'none' },
+                  "& fieldset": { border: 'none', borderRadius: '20px' },
                   '& .MuiInputBase-input': {
                     backgroundColor: 'white',
+                    borderRadius: '20px',
                   },
                   '&:hover fieldset': {
                     borderColor: 'green',
@@ -315,16 +356,23 @@ export default function Home() {
                 }}
               />
               <Button
-                variant="outlined"
+                variant="contained"
                 onClick={sendMessage}
                 disabled={isLoading}
                 sx={{
-                  bgcolor: "#edff79", borderColor: "#edff79", color: "black",
-                  '&:hover': { bgcolor: "#76915e", borderColor: "#76915e" }
+                  bgcolor: "#204D46", color: "white",
+                  '&:hover': { bgcolor: "#1a3e38" },
+                  borderRadius: "20px",
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  '& .MuiButton-endIcon': {
+                    marginLeft: '0px', // Adjust if needed to control spacing
+                    marginRight: '0px',
+                  },
                 }}
                 endIcon={isLoading ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
               >
-                {isLoading ? "Sending..." : "Send"}
               </Button>
             </Stack>
           </Stack>
