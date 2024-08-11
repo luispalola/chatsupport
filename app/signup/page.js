@@ -1,19 +1,38 @@
 "use client";
 
 import React, { useState } from 'react';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth } from '../config/firebaseConfig';
+import { db } from "@/firebase"; // Assuming you're using the same Firebase setup for Firestore
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
+  const [isHovered, setIsHovered] = useState(false); // State to track hover
 
   const handleSignup = async (e) => {
     e.preventDefault();
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      window.location.href = '/'; 
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+
+      // Update the user's profile with their first and last name
+      await updateProfile(user, {
+        displayName: `${firstName} ${lastName}`
+      });
+
+      // Store user details in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        firstName: firstName,
+        lastName: lastName,
+        email: email
+      });
+
+      window.location.href = '/'; // Redirect to chat page after signup
     } catch (error) {
       setError('Failed to create an account. Please try again.');
     }
@@ -25,6 +44,20 @@ export default function Signup() {
       <div style={styles.box}>
         <h2 style={styles.title}>Sign Up</h2>
         <form onSubmit={handleSignup}>
+          <input
+            style={styles.input}
+            type="text"
+            placeholder="First Name"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+          />
+          <input
+            style={styles.input}
+            type="text"
+            placeholder="Last Name"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+          />
           <input
             style={styles.input}
             type="email"
@@ -40,7 +73,14 @@ export default function Signup() {
             onChange={(e) => setPassword(e.target.value)}
           />
           {error && <p style={styles.errorText}>{error}</p>}
-          <button style={styles.button} type="submit">Sign Up</button>
+          <button
+            style={isHovered ? { ...styles.button, ...styles.buttonHover } : styles.button} // Apply hover effect
+            type="submit"
+            onMouseEnter={() => setIsHovered(true)} // Set hover state to true on mouse enter
+            onMouseLeave={() => setIsHovered(false)} // Set hover state to false on mouse leave
+          >
+            Sign Up
+          </button>
         </form>
         <p style={styles.signupText}>
           Already have an account? <a href="/login" style={styles.signupLink}>Login</a>
@@ -105,6 +145,11 @@ const styles = {
     cursor: 'pointer',
     fontSize: '16px',
     fontWeight: '500',
+    transition: 'background-color 0.3s ease, transform 0.3s ease',
+  },
+  buttonHover: {
+    backgroundColor: '#1e2d27', // Darker shade on hover
+    transform: 'scale(1.05)', // Slightly increase size on hover
   },
   signupText: {
     marginTop: '20px',
