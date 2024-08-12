@@ -23,6 +23,7 @@ export default function Home() {
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [isNewChat, setIsNewChat] = useState(false);
+  const [disabled, setDisabled] = useState(false);  // New state to control input and button
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -39,6 +40,13 @@ export default function Home() {
         timestamp: new Date(),
       });
       console.log('Conversation saved with ID: ', docRef.id);
+      
+      // Add the new conversation at the top of the list
+      setConversations(prevConversations => [
+        { id: docRef.id, messages: conversation, timestamp: new Date() },
+        ...prevConversations
+      ]);
+
       setDocId(docRef.id);  // Store the document ID
       return docRef.id;
     } catch (e) {
@@ -75,11 +83,13 @@ export default function Home() {
 
     if (user) {
       if (selectedConversation && !isNewChat) {
+        // Only update if selectedConversation is not null
         await updateConversation(selectedConversation.id, newMessages);
       } else {
+        // Save the new conversation
         currentDocId = await saveConversation(newMessages);
-        setSelectedConversation({ id: currentDocId, messages: newMessages });
-        setIsNewChat(false);
+        setDocId(currentDocId);  // Store the new conversation ID
+        setIsNewChat(false);  // This ensures that the chat is now treated as ongoing
       }
     }
     
@@ -99,7 +109,7 @@ export default function Home() {
       await reader.read().then(function processText({ done, value }) {
         if (done) {
           if (user && currentDocId) {
-            updateConversation(currentDocId, [...newMessages, { role: 'assistant', content: result}]);
+            updateConversation(currentDocId, [...newMessages, { role: 'assistant', content: result }]);
           } 
           setIsLoading(false);
           return result;
@@ -135,7 +145,7 @@ export default function Home() {
   };
 
   const handleKeyPress = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !disabled) {
       event.preventDefault();
       sendMessage();
     }
@@ -157,7 +167,11 @@ export default function Home() {
       id: doc.id,
       ...doc.data(),
     }));
-    setConversations(fetchedConversations);
+
+    // Sort conversations by timestamp in descending order
+    const sortedConversations = fetchedConversations.sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate());
+
+    setConversations(sortedConversations);
   };
 
   useEffect(() => {
@@ -166,12 +180,16 @@ export default function Home() {
 
   useEffect(() => {
     if (selectedConversation && !isNewChat) {
+      // User has selected an old conversation, disable input and button
       setMessages(selectedConversation.messages);
-    } else {
+      setDisabled(true);  
+    } else if (isNewChat) {
+      // Starting a new chat
       setMessages([{
         role: 'assistant',
         content: `Hi, I'm the Gainful Support Agent, how can I assist you today?`,
       }]);
+      setDisabled(false);  // Ensure input and button are enabled for a new chat
     }
   }, [selectedConversation, isNewChat]);
 
@@ -204,7 +222,9 @@ export default function Home() {
             }}
             onClick={() => {
               if (user) {
-                auth.signOut();
+                auth.signOut().then(() => {
+                  window.location.reload();
+                });
               } else {
                 window.location.href = '/login';
               }
@@ -242,85 +262,68 @@ export default function Home() {
           gap={10}
         >
           {/* Chat History */}
-          <Box
-            width={320}
-            height="100%"
-            bgcolor={"white"}
-            borderRadius={3}
-            display="flex"
-            alignItems={"center"}
-            flexDirection="column"
-          >
-            <Typography
-              my={2}
-              fontWeight="bold"
-            >
-              Chat History
-            </Typography>
-
+          {user && (
             <Box
-              width={270}
-              length={100}
-              mb={4}
-            >
-              <TextField
-                placeholder="Search chats"
-                bgcolor="#F5F5F5"
-                fullWidth
-                sx={{
-                  "& fieldset": { border: 'none' },
-                  '& .MuiInputBase-input': {
-                    backgroundColor: '#F5F5F5',
-                  },
-                  '&:hover fieldset': {
-                    borderColor: 'green',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#204D46',
-                  }
-                }}
-              />
-            </Box>
-
-            <Box
-              width={270}
-              height={60}
-              bgcolor="#F5F5F5"
+              width={320}
+              height="100%"
+              bgcolor={"white"}
               borderRadius={3}
               display="flex"
               alignItems={"center"}
-              justifyContent={"center"}
-              mb={2}
-              onClick={() => {
-                setSelectedConversation(null)
-                setIsNewChat(true)
-              }}
-              sx={{ cursor: 'pointer' }}
+              flexDirection="column"
             >
-              <Typography variant="h2" color={"#7F928F"}>
-                +
+              <Typography
+                my={2}
+                fontWeight="bold"
+              >
+                Chat History
               </Typography>
-            </Box>
 
-            <Stack spacing={2} width={270} height={360} overflow="auto">
-              {conversations.map((conversation) => (
-                <Box
-                  key={conversation.id}
-                  width="100%"
-                  height={100}
-                  borderRadius={3}
-                  p={2}
-                  bgcolor={selectedConversation?.id === conversation.id ? "#204D46" : "#F5F5F5"}
-                  onClick={() => setSelectedConversation(conversation)}
-                  sx={{ cursor: 'pointer', }}
-                >
-                  <Typography variant="body2" color={selectedConversation?.id === conversation.id ? "white" : "#7F928F"}>
-                    {conversation.messages[conversation.messages.length - 1]?.content.substring(0, 50)}...
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
-          </Box>
+              <Box
+                width={270}
+                height={60}
+                bgcolor="#F5F5F5"
+                borderRadius={3}
+                display="flex"
+                alignItems={"center"}
+                justifyContent={"center"}
+                mb={4}  // Adjusted mb for more space between + button and chat history logs
+                onClick={() => {
+                  setSelectedConversation(null)
+                  setIsNewChat(true)
+                  setDisabled(false);  // Enable input and button for the new chat
+                }}
+                sx={{ cursor: 'pointer' }}
+              >
+                <Typography variant="h2" color={"#7F928F"}>
+                  +
+                </Typography>
+              </Box>
+
+              <Stack spacing={2} width={270} height={360} overflow="auto">
+                {conversations.map((conversation) => (
+                  <Box
+                    key={conversation.id}
+                    width="100%"
+                    height={100}
+                    borderRadius={3}
+                    p={2}
+                    bgcolor={selectedConversation?.id === conversation.id ? "#204D46" : "#F5F5F5"}
+                    onClick={() => {
+                      setSelectedConversation(conversation);
+                      setIsNewChat(false);
+                      setDisabled(true);  // Disable input and button when selecting an old chat
+                    }}
+                    sx={{ cursor: 'pointer', }}
+                  >
+                    <Typography variant="body2" color={selectedConversation?.id === conversation.id ? "white" : "#7F928F"}>
+                      {conversation.messages[conversation.messages.length - 1]?.content.substring(0, 50)}...
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
+          )}
 
           {/* Chat */}
           <Stack
@@ -364,7 +367,7 @@ export default function Home() {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={isLoading}
+                disabled={disabled || isLoading}  // Disable when viewing a past conversation or when loading
                 sx={{
                   "& fieldset": { border: 'none' },
                   '& .MuiInputBase-input': {
@@ -381,7 +384,7 @@ export default function Home() {
               <Button
                 variant="outlined"
                 onClick={sendMessage}
-                disabled={isLoading}
+                disabled={disabled || isLoading}  // Disable when viewing a past conversation or when loading
                 sx={{
                   bgcolor: "#edff79", borderColor: "#edff79", color: "black",
                   '&:hover': { bgcolor: "#76915e", borderColor: "#76915e" }
