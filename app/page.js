@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Head from 'next/head';
 import SendIcon from '@mui/icons-material/Send';
 import { db } from "@/firebase";
-import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
 import { auth } from './config/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -19,6 +19,10 @@ export default function Home() {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState(null); // User state for authentication
+  const [docId, setDocId] = useState(null);  // State to track the document ID
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [isNewChat, setIsNewChat] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -35,6 +39,7 @@ export default function Home() {
         timestamp: new Date(),
       });
       console.log('Conversation saved with ID: ', docRef.id);
+      setDocId(docRef.id);  // Store the document ID
       return docRef.id;
     } catch (e) {
       console.error('Error adding document: ', e);
@@ -66,6 +71,18 @@ export default function Home() {
     setMessage('');
     setMessages(newMessages);
 
+    let currentDocId = docId;
+
+    if (user) {
+      if (selectedConversation && !isNewChat) {
+        await updateConversation(selectedConversation.id, newMessages);
+      } else {
+        currentDocId = await saveConversation(newMessages);
+        setSelectedConversation({ id: currentDocId, messages: newMessages });
+        setIsNewChat(false);
+      }
+    }
+    
     try {
       const response = await fetch('/api/chat', {
         method: "POST",
@@ -81,12 +98,15 @@ export default function Home() {
       let result = '';
       await reader.read().then(function processText({ done, value }) {
         if (done) {
-          saveConversation(newMessages);
+          if (user && currentDocId) {
+            updateConversation(currentDocId, [...newMessages, { role: 'assistant', content: result}]);
+          } 
           setIsLoading(false);
           return result;
         }
 
         const text = decoder.decode(value || new Int8Array(), { stream: true });
+        result += text;
 
         setMessages((messages) => {
           let lastMessage = messages[messages.length - 1];
@@ -98,7 +118,11 @@ export default function Home() {
               content: lastMessage.content + text
             },
           ];
-          updateConversation(updatedMessages);
+
+          if (user && currentDocId) {
+            updateConversation(currentDocId, updatedMessages);
+          }
+
           return updatedMessages;
         });
 
@@ -127,6 +151,30 @@ export default function Home() {
     scrollToBottom();
   }, [messages]);
 
+  const fetchConversations = async () => {
+    const querySnapshot = await getDocs(collection(db, 'conversations'));
+    const fetchedConversations = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+    setConversations(fetchedConversations);
+  };
+
+  useEffect(() => {
+    fetchConversations();
+  }, []);
+
+  useEffect(() => {
+    if (selectedConversation && !isNewChat) {
+      setMessages(selectedConversation.messages);
+    } else {
+      setMessages([{
+        role: 'assistant',
+        content: `Hi, I'm the Gainful Support Agent, how can I assist you today?`,
+      }]);
+    }
+  }, [selectedConversation, isNewChat]);
+
   return (
     <>
       <Head>
@@ -147,7 +195,7 @@ export default function Home() {
         >
           <Button
             variant="contained"
-            sx = {{
+            sx={{
               bgcolor: user ? 'red' : 'green',
               '&:hover': {
                 bgcolor: user ? 'darkred' : 'darkgreen',
@@ -236,26 +284,42 @@ export default function Home() {
 
             <Box
               width={270}
-              height={100}
-              bgcolor="#204D46"
-              borderRadius={3}
-              mb={2}
-            >
-            </Box>
-            <Box
-              width={270}
-              height={100}
+              height={60}
               bgcolor="#F5F5F5"
               borderRadius={3}
-              mb={2}
               display="flex"
               alignItems={"center"}
               justifyContent={"center"}
+              mb={2}
+              onClick={() => {
+                setSelectedConversation(null)
+                setIsNewChat(true)
+              }}
+              sx={{ cursor: 'pointer' }}
             >
               <Typography variant="h2" color={"#7F928F"}>
                 +
               </Typography>
             </Box>
+
+            <Stack spacing={2} width={270} height={360} overflow="auto">
+              {conversations.map((conversation) => (
+                <Box
+                  key={conversation.id}
+                  width="100%"
+                  height={100}
+                  borderRadius={3}
+                  p={2}
+                  bgcolor={selectedConversation?.id === conversation.id ? "#204D46" : "#F5F5F5"}
+                  onClick={() => setSelectedConversation(conversation)}
+                  sx={{ cursor: 'pointer', }}
+                >
+                  <Typography variant="body2" color={selectedConversation?.id === conversation.id ? "white" : "#7F928F"}>
+                    {conversation.messages[conversation.messages.length - 1]?.content.substring(0, 50)}...
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
           </Box>
 
           {/* Chat */}
