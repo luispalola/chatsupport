@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from '../config/firebaseConfig';
+import { auth } from '@/firebase';
 import { db } from "@/firebase"; // Assuming you're using the same Firebase setup for Firestore
 import { doc, setDoc } from 'firebase/firestore';
 
@@ -13,6 +13,7 @@ export default function Signup() {
   const [lastName, setLastName] = useState('');
   const [error, setError] = useState('');
   const [isHovered, setIsHovered] = useState(false); // State to track hover
+  const [isLoginHovered, setIsLoginHovered] = useState(false); // State for Login hover
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -83,7 +84,15 @@ export default function Signup() {
           </button>
         </form>
         <p style={styles.signupText}>
-          Already have an account? <a href="/login" style={styles.signupLink}>Login</a>
+          Already have an account?&nbsp;
+          <a 
+            href="/login" 
+            style={isLoginHovered ? { ...styles.signupLink, ...styles.signupLinkHover } : styles.signupLink}
+            onMouseEnter={() => setIsLoginHovered(true)}
+            onMouseLeave={() => setIsLoginHovered(false)}
+          >
+            Login
+          </a>
         </p>
       </div>
     </div>
@@ -159,6 +168,9 @@ const styles = {
   signupLink: {
     color: '#c3c78e',
     textDecoration: 'none',
+  },
+  signupLinkHover: {
+    textDecoration: 'underline',
   },
   errorText: {
     color: 'red',

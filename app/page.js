@@ -5,8 +5,8 @@ import Head from 'next/head';
 import SendIcon from '@mui/icons-material/Send';
 import HistoryIcon from '@mui/icons-material/History';
 import { db } from "@/firebase";
-import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
-import { auth } from './config/firebaseConfig';
+import { collection, addDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
+import { auth } from '@/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function Home() {
@@ -19,8 +19,14 @@ export default function Home() {
 
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [user, setUser] = useState(null); 
-  const [isChatHistoryVisible, setIsChatHistoryVisible] = useState(false);
+  const [user, setUser] = useState(null);
+  const [docId, setDocId] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [isNewChat, setIsNewChat] = useState(false);
+  const [disabled, setDisabled] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [animateOut, setAnimateOut] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -37,6 +43,13 @@ export default function Home() {
         timestamp: new Date(),
       });
       console.log('Conversation saved with ID: ', docRef.id);
+      
+      setConversations(prevConversations => [
+        { id: docRef.id, messages: conversation, timestamp: new Date() },
+        ...prevConversations
+      ]);
+
+      setDocId(docRef.id);
       return docRef.id;
     } catch (e) {
       console.error('Error adding document: ', e);
@@ -68,6 +81,18 @@ export default function Home() {
     setMessage('');
     setMessages(newMessages);
 
+    let currentDocId = docId;
+
+    if (user) {
+      if (selectedConversation && !isNewChat) {
+        await updateConversation(selectedConversation.id, newMessages);
+      } else {
+        currentDocId = await saveConversation(newMessages);
+        setDocId(currentDocId);
+        setIsNewChat(false);
+      }
+    }
+    
     try {
       const response = await fetch('/api/chat', {
         method: "POST",
@@ -83,12 +108,15 @@ export default function Home() {
       let result = '';
       await reader.read().then(function processText({ done, value }) {
         if (done) {
-          saveConversation(newMessages);
+          if (user && currentDocId) {
+            updateConversation(currentDocId, [...newMessages, { role: 'assistant', content: result }]);
+          } 
           setIsLoading(false);
           return result;
         }
 
         const text = decoder.decode(value || new Int8Array(), { stream: true });
+        result += text;
 
         setMessages((messages) => {
           let lastMessage = messages[messages.length - 1];
@@ -100,7 +128,11 @@ export default function Home() {
               content: lastMessage.content + text
             },
           ];
-          updateConversation(updatedMessages);
+
+          if (user && currentDocId) {
+            updateConversation(currentDocId, updatedMessages);
+          }
+
           return updatedMessages;
         });
 
@@ -113,7 +145,7 @@ export default function Home() {
   };
 
   const handleKeyPress = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !disabled) {
       event.preventDefault();
       sendMessage();
     }
@@ -129,6 +161,47 @@ export default function Home() {
     scrollToBottom();
   }, [messages]);
 
+  const fetchConversations = async () => {
+    const querySnapshot = await getDocs(collection(db, 'conversations'));
+    const fetchedConversations = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    const sortedConversations = fetchedConversations.sort((a, b) => b.timestamp.toDate() - a.timestamp.toDate());
+
+    setConversations(sortedConversations);
+  };
+
+  useEffect(() => {
+    fetchConversations();
+  }, []);
+
+  useEffect(() => {
+    if (selectedConversation && !isNewChat) {
+      setMessages(selectedConversation.messages);
+      setDisabled(true);
+    } else if (isNewChat) {
+      setMessages([{
+        role: 'assistant',
+        content: `Hi, I'm the Gainful Support Agent, how can I assist you today?`,
+      }]);
+      setDisabled(false);
+    }
+  }, [selectedConversation, isNewChat]);
+
+  const toggleChatHistory = () => {
+    if (showChatHistory) {
+      setAnimateOut(true);
+      setTimeout(() => {
+        setShowChatHistory(false);
+        setAnimateOut(false);
+      }, 300);
+    } else {
+      setShowChatHistory(true);
+    }
+  };
+
   return (
     <>
       <Head>
@@ -141,19 +214,16 @@ export default function Home() {
         bgcolor="#F8F4F0"
         display="flex"
         flexDirection="column"
-        position="relative"
       >
         {/* Header */}
         <Box
-          width="100%"
-          height={90}
-          bgcolor={"#204D46"}
           display="flex"
           alignItems="center"
           justifyContent="space-between"
           padding="0 2%"
+          height={90}
+          bgcolor={"#204D46"}
         >
-          {/* Left Section for Chat History Icon */}
           <Box
             display="flex"
             justifyContent="flex-start"
@@ -161,17 +231,16 @@ export default function Home() {
             flex="1"
           >
             <Button
-              onClick={() => setIsChatHistoryVisible(!isChatHistoryVisible)}
+              onClick={toggleChatHistory}
               sx={{
-                color: "white",
                 minWidth: 'auto',
+                color: 'white',
               }}
             >
               <HistoryIcon />
             </Button>
           </Box>
 
-          {/* Center Section for Logo */}
           <Box
             display="flex"
             justifyContent="center"
@@ -189,7 +258,6 @@ export default function Home() {
             />
           </Box>
 
-          {/* Right Section for Login Button */}
           <Box
             display="flex"
             justifyContent="flex-end"
@@ -219,86 +287,83 @@ export default function Home() {
           </Box>
         </Box>
 
-        {/* Chat History Layered on Top */}
-        {isChatHistoryVisible && (
-          <Box
-            position="absolute"
-            top={90} // Positioning it right below the header
-            width="100vw"
-            height="calc(100vh - 90px)"
-            bgcolor="rgba(255, 255, 255, 0.9)"
-            zIndex={10}
-            display="flex"
-            flexDirection="column"
-            alignItems="center"
-            justifyContent="center"
-            borderRadius={3}
-            padding={2}
-          >
-            <Typography
-              my={2}
-              fontWeight="bold"
-            >
-              Chat History
-            </Typography>
-
-            <Box
-              width={270}
-              mb={4}
-            >
-              <TextField
-                placeholder="Search chats"
-                bgcolor="#F5F5F5"
-                fullWidth
-                sx={{
-                  "& fieldset": { border: 'none' },
-                  '& .MuiInputBase-input': {
-                    backgroundColor: '#F5F5F5',
-                    borderRadius: '20px',
-                  },
-                  '&:hover fieldset': {
-                    borderColor: 'green',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#204D46',
-                  }
-                }}
-              />
-            </Box>
-
-            <Box
-              width={270}
-              height={100}
-              bgcolor="#204D46"
-              borderRadius={3}
-              mb={2}
-            >
-            </Box>
-            <Box
-              width={270}
-              height={100}
-              bgcolor="#F5F5F5"
-              borderRadius={3}
-              mb={2}
-              display="flex"
-              alignItems={"center"}
-              justifyContent={"center"}
-            >
-              <Typography variant="h2" color={"#7F928F"}>
-                +
-              </Typography>
-            </Box>
-          </Box>
-        )}
-
-        {/* Chat */}
         <Box
           sx={{ flex: 1 }}
           m={5}
           display="flex"
-          flexDirection={{ xs: 'column', md: 'row' }}
+          flexDirection={"row"}
           gap={10}
         >
+          {/* Chat History */}
+          {user && showChatHistory && (
+            <Box
+              width={320}
+              height="100%"
+              bgcolor={"white"}
+              borderRadius={3}
+              display="flex"
+              alignItems={"center"}
+              flexDirection="column"
+              sx={{
+                animation: animateOut ? 'fadeSlideOut 0.3s forwards' : 'fadeSlideIn 0.3s forwards',
+                position: 'absolute',
+                zIndex: 10,
+              }}
+            >
+              <Typography
+                my={2}
+                fontWeight="bold"
+              >
+                Chat History
+              </Typography>
+
+              <Box
+                width={270}
+                height={60}
+                bgcolor="#F5F5F5"
+                borderRadius={3}
+                display="flex"
+                alignItems={"center"}
+                justifyContent={"center"}
+                mb={4}
+                onClick={() => {
+                  setSelectedConversation(null)
+                  setIsNewChat(true)
+                  setDisabled(false);
+                }}
+                sx={{ cursor: 'pointer' }}
+              >
+                <Typography variant="h2" color={"#7F928F"}>
+                  +
+                </Typography>
+              </Box>
+
+              <Stack spacing={2} width={270} height={360} overflow="auto">
+                {conversations.map((conversation) => (
+                  <Box
+                    key={conversation.id}
+                    width="100%"
+                    height={100}
+                    borderRadius={3}
+                    p={2}
+                    bgcolor={selectedConversation?.id === conversation.id ? "#204D46" : "#F5F5F5"}
+                    onClick={() => {
+                      setSelectedConversation(conversation);
+                      setIsNewChat(false);
+                      setDisabled(true);
+                    }}
+                    sx={{ cursor: 'pointer', }}
+                  >
+                    <Typography variant="body2" color={selectedConversation?.id === conversation.id ? "white" : "#7F928F"}>
+                      {conversation.messages[conversation.messages.length - 1]?.content.substring(0, 50)}...
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
+          )}
+
+          {/* Chat */}
           <Stack
             sx={{ flex: 1 }}
             height="100%"
@@ -332,7 +397,7 @@ export default function Home() {
               }
               <div ref={messagesEndRef} />
             </Stack>
-            <Stack direction="row" spacing={1}>
+            <Stack direction="row" spacing={2}>
               <TextField
                 placeholder="Ask a question"
                 bgcolor="white"
@@ -340,12 +405,11 @@ export default function Home() {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={isLoading}
+                disabled={disabled || isLoading}
                 sx={{
-                  "& fieldset": { border: 'none', borderRadius: '20px' },
+                  "& fieldset": { border: 'none' },
                   '& .MuiInputBase-input': {
                     backgroundColor: 'white',
-                    borderRadius: '20px',
                   },
                   '&:hover fieldset': {
                     borderColor: 'green',
@@ -358,7 +422,7 @@ export default function Home() {
               <Button
                 variant="contained"
                 onClick={sendMessage}
-                disabled={isLoading}
+                disabled={disabled || isLoading}
                 sx={{
                   bgcolor: "#204D46", color: "white",
                   '&:hover': { bgcolor: "#1a3e38" },
@@ -367,7 +431,7 @@ export default function Home() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   '& .MuiButton-endIcon': {
-                    marginLeft: '0px', // Adjust if needed to control spacing
+                    marginLeft: '0px',
                     marginRight: '0px',
                   },
                 }}
@@ -378,6 +442,28 @@ export default function Home() {
           </Stack>
         </Box>
       </Box>
+      <style jsx>{`
+        @keyframes fadeSlideIn {
+          0% {
+            opacity: 0;
+            transform: translateX(-100%);
+          }
+          100% {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        @keyframes fadeSlideOut {
+          0% {
+            opacity: 1;
+            transform: translateX(0);
+          }
+          100% {
+            opacity: 0;
+            transform: translateX(-100%);
+          }
+        }
+      `}</style>
     </>
   )
 }
